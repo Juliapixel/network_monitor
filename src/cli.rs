@@ -7,10 +7,6 @@ use trust_dns_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts}
 #[derive(Debug, Clone, Parser)]
 #[command(version, author)]
 pub struct Args {
-    /// verbosity
-    #[arg(short, action = clap::ArgAction::Count)]
-    pub verbosity: u8,
-
     /// interval between ping attempts in seconds
     #[arg(short, long, default_value="15")]
     pub interval: usize,
@@ -18,6 +14,10 @@ pub struct Args {
     /// output directory for logs
     #[arg(short = 'o', long, value_parser=parse_log_file_dir)]
     pub out_dir: Option<PathBuf>,
+
+    /// verbosity
+    #[arg(short, action = clap::ArgAction::Count)]
+    pub verbosity: u8,
 
     /// hostname used for pinging
     ///
