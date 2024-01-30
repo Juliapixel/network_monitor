@@ -3,7 +3,7 @@ use std::{io::Write, net::IpAddr, time::Duration};
 use clap::Parser;
 use cli::Args;
 use flexi_logger::{style, Age, Cleanup, Criterion, DeferredNow, FileSpec, LogSpecification, Naming};
-use log::{debug, error, info, trace, Record};
+use log::{debug, error, info, trace, warn, Record};
 
 mod cli;
 
@@ -110,6 +110,9 @@ async fn main() {
             },
             Err(e) => {
                 debug!("v4 failed: {e:?}");
+                if !v4_error_active {
+                    warn!("IPv4 ping failed {v4_errors} times");
+                }
                 v4_successes = 0;
                 v4_errors += 1;
             },
@@ -126,6 +129,9 @@ async fn main() {
             },
             Err(e) => {
                 debug!("v6 failed: {e:?}");
+                if !v6_error_active {
+                    warn!("IPv6 ping failed {v6_errors} times");
+                }
                 v6_successes = 0;
                 v6_errors += 1;
             },
