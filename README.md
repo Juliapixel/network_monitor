@@ -10,7 +10,7 @@ do `cargo run -r -- --help` for usage instructions
 this is what that looks like as of the time of writing this:
 
 ```
-Usage: network_tester [OPTIONS] [HOSTNAME]
+Usage: network_monitor [OPTIONS] [HOSTNAME]
 
 Arguments:
   [HOSTNAME]
