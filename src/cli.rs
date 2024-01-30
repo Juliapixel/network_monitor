@@ -14,6 +14,10 @@ pub struct Args {
     #[arg(short = 'o', long, value_parser=parse_log_file_dir)]
     pub out_dir: Option<PathBuf>,
 
+    /// how many errors in a row must occur for a network outage to be logged
+    #[arg(long, default_value="2")]
+    pub hysteresis: u8,
+
     /// verbosity
     #[arg(short, action = clap::ArgAction::Count)]
     pub verbosity: u8,

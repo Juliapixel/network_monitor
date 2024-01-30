@@ -132,8 +132,8 @@ async fn main() {
         }
 
         // small hysteresis to account for random missed pings
-        let v4_down = v4_errors >= 3;
-        let v6_down = v6_errors >= 3;
+        let v4_down = v4_errors >= args.hysteresis as usize;
+        let v6_down = v6_errors >= args.hysteresis as usize;
 
         match (v4_down, v6_down) {
             (true, true) => {
