@@ -1,4 +1,4 @@
-use std::{io::{stdin, IsTerminal, Read, Write}, net::IpAddr, sync::{atomic::AtomicBool, Arc}, time::Duration};
+use std::{io::Write, net::IpAddr, time::Duration};
 
 use clap::Parser;
 use cli::Args;
@@ -61,18 +61,13 @@ async fn main() {
 
     let (tx, mut rx) = tokio::sync::watch::channel(false);
 
-    let task = tokio::spawn({
+    tokio::spawn({
         async move {
                 tokio::signal::ctrl_c().await.unwrap();
                 trace!("received CTRL+C");
                 tx.send(true).unwrap();
                 trace!("sent cancellation signal");
             }
-
-            // loop {
-            //     let mut key = [0u8];
-            //     std::io::stdin().read(&mut key).unwrap();
-            // }
         }
     );
 
