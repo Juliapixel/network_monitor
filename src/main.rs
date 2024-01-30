@@ -1,4 +1,4 @@
-use std::{io::Write, net::IpAddr, time::Duration};
+use std::{io::Write, net::IpAddr, time::{Duration, Instant}};
 
 use clap::Parser;
 use cli::Args;
@@ -83,6 +83,9 @@ async fn main() {
     let mut v4_error_active = false;
     let mut v6_error_active = false;
 
+    let mut v4_error_start: Option<Instant> = None;
+    let mut v6_error_start: Option<Instant> = None;
+
     let mut interval = tokio::time::interval(Duration::from_secs(args.interval as u64));
 
     let v4_ip = IpAddr::V4(args.hostname.0);
@@ -110,11 +113,11 @@ async fn main() {
             },
             Err(e) => {
                 debug!("v4 failed: {e:?}");
+                v4_successes = 0;
+                v4_errors += 1;
                 if !v4_error_active {
                     warn!("IPv4 ping failed {v4_errors} times");
                 }
-                v4_successes = 0;
-                v4_errors += 1;
             },
         }
 
@@ -129,11 +132,11 @@ async fn main() {
             },
             Err(e) => {
                 debug!("v6 failed: {e:?}");
+                v6_successes = 0;
+                v6_errors += 1;
                 if !v6_error_active {
                     warn!("IPv6 ping failed {v6_errors} times");
                 }
-                v6_successes = 0;
-                v6_errors += 1;
             },
         }
 
@@ -141,6 +144,15 @@ async fn main() {
         let v4_down = v4_errors >= args.hysteresis as usize;
         let v6_down = v6_errors >= args.hysteresis as usize;
 
+        if v4_errors > 0 && v4_error_start.is_none() {
+            v4_error_start = Some(Instant::now());
+        }
+
+        if v6_errors > 0 && v6_error_start.is_none() {
+            v6_error_start = Some(Instant::now());
+        }
+
+        // this is an abomination
         match (v4_down, v6_down) {
             (true, true) => {
                 if !(v4_error_active && v6_error_active) {
@@ -152,21 +164,82 @@ async fn main() {
                 if !v4_error_active {
                     error!("IPv4 is down!");
                 }
+                if v6_error_active {
+                    if let Some(start) = v6_error_start {
+                        let secs = start.elapsed().as_secs();
+                        info!(
+                            "IPv6 is back online, and was down for {:02}:{:02}:{:02}",
+                            secs / 3600,
+                            secs / 60,
+                            secs % 60
+                        );
+                        v6_error_start = None;
+                    } else {
+                        info!("IPv6 is back online;")
+                    }
+                }
                 (v4_error_active, v6_error_active) = (true, false);
             },
             (false, true) => {
                 if !v6_error_active {
                     error!("IPv6 is down!");
                 }
+                if v4_error_active {
+                    if let Some(start) = v4_error_start {
+                        let secs = start.elapsed().as_secs();
+                        info!(
+                            "IPv4 is back online, and was down for {:02}:{:02}:{:02}",
+                            secs / 3600,
+                            secs / 60,
+                            secs % 60
+                        );
+                        v4_error_start = None;
+                    } else {
+                        info!("IPv4 is back online;")
+                    }
+                }
                 (v4_error_active, v6_error_active) = (false, true);
             },
             (false, false) => {
                 if v4_error_active && v6_error_active {
-                    info!("network is back online");
+                    if let Some(start) = v4_error_start {
+                        let secs = start.elapsed().as_secs();
+                        info!(
+                            "network is back online, and was down for {:02}:{:02}:{:02}",
+                            secs / 3600,
+                            secs / 60,
+                            secs % 60
+                        );
+                        v4_error_start = None;
+                    } else {
+                        info!("network is back online;")
+                    }
                 } else if v4_error_active {
-                    info!("IPv4 is back online")
+                    if let Some(start) = v4_error_start {
+                        let secs = start.elapsed().as_secs();
+                        info!(
+                            "IPv4 is back online, and was down for {:02}:{:02}:{:02}",
+                            secs / 3600,
+                            secs / 60,
+                            secs % 60
+                        );
+                        v4_error_start = None;
+                    } else {
+                        info!("IPv4 is back online;")
+                    }
                 } else if v6_error_active {
-                    info!("IPv6 is back online")
+                    if let Some(start) = v6_error_start {
+                        let secs = start.elapsed().as_secs();
+                        info!(
+                            "IPv6 is back online, and was down for {:02}:{:02}:{:02}",
+                            secs / 3600,
+                            secs / 60,
+                            secs % 60
+                        );
+                        v6_error_start = None;
+                    } else {
+                        info!("IPv6 is back online;")
+                    }
                 }
                 (v4_error_active, v6_error_active) = (false, false);
             },
