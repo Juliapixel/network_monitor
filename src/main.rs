@@ -61,6 +61,8 @@ async fn main() {
 
     let (tx, mut rx) = tokio::sync::watch::channel(false);
 
+    // watches for CTRL+C and sends a signal to main thread to gracefully
+    // shutdown
     tokio::spawn({
         async move {
                 tokio::signal::ctrl_c().await.unwrap();
@@ -71,12 +73,14 @@ async fn main() {
         }
     );
 
+    // errors in a row
     let mut v4_errors: usize = 0;
-    let mut v4_successes: usize = 0;
-    let mut v4_error_active = false;
-
     let mut v6_errors: usize = 0;
+    // successes in a row
+    let mut v4_successes: usize = 0;
     let mut v6_successes: usize = 0;
+    // if there was an error during the last iteration
+    let mut v4_error_active = false;
     let mut v6_error_active = false;
 
     let mut interval = tokio::time::interval(Duration::from_secs(args.interval as u64));
@@ -127,6 +131,7 @@ async fn main() {
             },
         }
 
+        // small hysteresis to account for random missed pings
         let v4_down = v4_errors >= 3;
         let v6_down = v6_errors >= 3;
 

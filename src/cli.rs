@@ -3,7 +3,6 @@ use std::{net::{Ipv4Addr, Ipv6Addr}, path::PathBuf, str::FromStr};
 use clap::Parser;
 use trust_dns_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
 
-
 #[derive(Debug, Clone, Parser)]
 #[command(version, author)]
 pub struct Args {
@@ -26,6 +25,7 @@ pub struct Args {
     pub hostname: (Ipv4Addr, Ipv6Addr)
 }
 
+/// errors if not a directory or if path doesn't exist
 fn parse_log_file_dir(val: &str) -> Result<PathBuf, &'static str> {
     let path = PathBuf::from(val);
     if !path.exists() {
@@ -40,6 +40,7 @@ fn parse_log_file_dir(val: &str) -> Result<PathBuf, &'static str> {
     }
 }
 
+/// looks up the A and AAAA records of the given domain, errors if either aren't present
 fn parse_address(val: &str) -> Result<(Ipv4Addr, Ipv6Addr), &'static str> {
     let url = url::Url::from_str(val);
 
