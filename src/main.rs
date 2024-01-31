@@ -46,7 +46,7 @@ async fn main() {
         .format_for_stderr(formatter_stderr)
         .format_for_files(formatter_file);
 
-    if let Some(dir) = args.out_dir {
+    if let Some(dir) = &args.out_dir {
         logger.log_to_file(
             FileSpec::default()
                 .directory(dir)
@@ -56,8 +56,10 @@ async fn main() {
     }
 
     info!("logging started");
-    info!("pinging {} for IPv4", args.hostname.0);
-    info!("pinging {} for IPv6", args.hostname.1);
+
+    debug!("{:#?}", &args);
+
+    info!("monitoring started, pinging {} and {} every {}s", args.hostname.0, args.hostname.1, args.interval);
 
     let (tx, mut rx) = tokio::sync::watch::channel(false);
 
@@ -116,7 +118,7 @@ async fn main() {
                 v4_successes = 0;
                 v4_errors += 1;
                 if !v4_error_active {
-                    warn!("IPv4 ping failed {v4_errors} times");
+                    warn!("IPv4 ping failed {v4_errors} times, reason: {e}");
                 }
             },
         }
@@ -135,7 +137,7 @@ async fn main() {
                 v6_successes = 0;
                 v6_errors += 1;
                 if !v6_error_active {
-                    warn!("IPv6 ping failed {v6_errors} times");
+                    warn!("IPv6 ping failed {v6_errors} times, reason: {e}");
                 }
             },
         }
