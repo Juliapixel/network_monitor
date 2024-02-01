@@ -93,6 +93,7 @@ async fn main() {
     let v4_ip = IpAddr::V4(args.hostname.0);
     let v6_ip = IpAddr::V6(args.hostname.1);
 
+    // TODO: make this not as stupid
     loop {
         let payload: [u8; 256] = core::array::from_fn(|i| i as u8);
 
@@ -146,11 +147,11 @@ async fn main() {
         let v4_down = v4_errors >= args.hysteresis as usize;
         let v6_down = v6_errors >= args.hysteresis as usize;
 
-        if v4_errors > 0 && v4_error_start.is_none() {
+        if v4_errors == 1 {
             v4_error_start = Some(Instant::now());
         }
 
-        if v6_errors > 0 && v6_error_start.is_none() {
+        if v6_errors == 1 {
             v6_error_start = Some(Instant::now());
         }
 
@@ -172,7 +173,7 @@ async fn main() {
                         info!(
                             "IPv6 is back online, and was down for {:02}:{:02}:{:02}",
                             secs / 3600,
-                            secs / 60,
+                            (secs / 60) % 60,
                             secs % 60
                         );
                         v6_error_start = None;
@@ -192,7 +193,7 @@ async fn main() {
                         info!(
                             "IPv4 is back online, and was down for {:02}:{:02}:{:02}",
                             secs / 3600,
-                            secs / 60,
+                            (secs / 60) % 60,
                             secs % 60
                         );
                         v4_error_start = None;
@@ -209,7 +210,7 @@ async fn main() {
                         info!(
                             "network is back online, and was down for {:02}:{:02}:{:02}",
                             secs / 3600,
-                            secs / 60,
+                            (secs / 60) % 60,
                             secs % 60
                         );
                         v4_error_start = None;
@@ -222,7 +223,7 @@ async fn main() {
                         info!(
                             "IPv4 is back online, and was down for {:02}:{:02}:{:02}",
                             secs / 3600,
-                            secs / 60,
+                            (secs / 60) % 60,
                             secs % 60
                         );
                         v4_error_start = None;
@@ -235,7 +236,7 @@ async fn main() {
                         info!(
                             "IPv6 is back online, and was down for {:02}:{:02}:{:02}",
                             secs / 3600,
-                            secs / 60,
+                            (secs / 60) % 60,
                             secs % 60
                         );
                         v6_error_start = None;
