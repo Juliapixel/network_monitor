@@ -2,7 +2,7 @@ use std::{io::Write, net::IpAddr, time::{Duration, Instant}};
 
 use clap::Parser;
 use cli::Args;
-use flexi_logger::{style, Age, Cleanup, Criterion, DeferredNow, FileSpec, LogSpecification, Naming};
+use flexi_logger::{style, Cleanup, Criterion, DeferredNow, FileSpec, LogSpecification, Naming};
 use log::{debug, error, info, trace, warn, Record};
 
 mod cli;
@@ -42,7 +42,7 @@ async fn main() {
     let logger = flexi_logger::Logger::with(level)
         .duplicate_to_stderr(flexi_logger::Duplicate::All)
         .print_message()
-        .rotate(Criterion::Age(Age::Day), Naming::Numbers, Cleanup::KeepCompressedFiles(30))
+        .rotate(Criterion::Size(1024 * 1024 * 5), Naming::Numbers, Cleanup::KeepCompressedFiles(30))
         .format_for_stderr(formatter_stderr)
         .format_for_files(formatter_file);
 
