@@ -1,6 +1,6 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, path::PathBuf, str::FromStr};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use once_cell::sync::Lazy;
 use trust_dns_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
 
@@ -100,4 +100,9 @@ fn parse_address(val: &str) -> Result<(Ipv4Addr, Ipv6Addr), &'static str> {
             Err(_e) => Err("There was an error while trying to resolve the hostname"),
         }
     }
+}
+
+#[test]
+fn verify_cli() {
+    Args::command().debug_assert()
 }
