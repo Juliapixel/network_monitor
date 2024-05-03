@@ -1,14 +1,17 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, path::PathBuf, str::FromStr};
 
 use clap::Parser;
+use once_cell::sync::Lazy;
 use trust_dns_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
+
+pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);
 
 #[derive(Debug, Clone, Parser)]
 #[command(version, author)]
 pub struct Args {
     /// interval between ping attempts in seconds
     #[arg(short, long, default_value="15")]
-    pub interval: usize,
+    pub interval: u64,
 
     /// output directory for logs
     #[arg(short = 'o', long, value_parser=parse_log_file_dir)]
@@ -16,7 +19,7 @@ pub struct Args {
 
     /// how many errors in a row must occur for a network outage to be logged
     #[arg(long, default_value="2")]
-    pub hysteresis: u8,
+    pub hysteresis: u32,
 
     /// verbosity
     #[arg(short, action = clap::ArgAction::Count)]
@@ -39,8 +42,8 @@ fn parse_log_file_dir(val: &str) -> Result<PathBuf, &'static str> {
         return Err("Giver path is not a directory");
     }
     match path.canonicalize() {
-        Ok(o) => return Ok(o),
-        Err(_) => return Err("Could not make path absolute"),
+        Ok(o) => Ok(o),
+        Err(_) => Err("Could not make path absolute"),
     }
 }
 
@@ -71,13 +74,13 @@ fn parse_address(val: &str) -> Result<(Ipv4Addr, Ipv6Addr), &'static str> {
                 let v6: Option<Ipv6Addr> = o.as_lookup().record_iter().find_map(|r| Some(r.data()?.as_aaaa()?.0));
 
                 match (v4, v6) {
-                    (None, None) => return Err("The provided domain is invalid"),
-                    (None, Some(_)) => return Err("The provided domain does not support IPv4"),
-                    (Some(_), None) => return Err("The provided domain does not support IPv6"),
-                    (Some(v4), Some(v6)) => return Ok((v4, v6)),
+                    (None, None) => Err("The provided domain is invalid"),
+                    (None, Some(_)) => Err("The provided domain does not support IPv4"),
+                    (Some(_), None) => Err("The provided domain does not support IPv6"),
+                    (Some(v4), Some(v6)) => Ok((v4, v6)),
                 }
             },
-            Err(_e) => return Err("There was an error while trying to resolve the hostname"),
+            Err(_e) => Err("There was an error while trying to resolve the hostname"),
         }
     } else {
         let lookup = resolver.lookup_ip(val);
@@ -88,13 +91,13 @@ fn parse_address(val: &str) -> Result<(Ipv4Addr, Ipv6Addr), &'static str> {
                 let v6: Option<Ipv6Addr> = o.as_lookup().record_iter().find_map(|r| Some(r.data()?.as_aaaa()?.0));
 
                 match (v4, v6) {
-                    (None, None) => return Err("The provided domain is invalid"),
-                    (None, Some(_)) => return Err("The provided domain does not support IPv4"),
-                    (Some(_), None) => return Err("The provided domain does not support IPv6"),
-                    (Some(v4), Some(v6)) => return Ok((v4, v6)),
+                    (None, None) => Err("The provided domain is invalid"),
+                    (None, Some(_)) => Err("The provided domain does not support IPv4"),
+                    (Some(_), None) => Err("The provided domain does not support IPv6"),
+                    (Some(v4), Some(v6)) => Ok((v4, v6)),
                 }
             },
-            Err(_e) => return Err("There was an error while trying to resolve the hostname"),
+            Err(_e) => Err("There was an error while trying to resolve the hostname"),
         }
     }
 }

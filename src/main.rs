@@ -1,9 +1,12 @@
 use std::{io::Write, net::IpAddr, time::{Duration, Instant}};
 
-use clap::Parser;
-use cli::Args;
 use flexi_logger::{style, Cleanup, Criterion, DeferredNow, FileSpec, LogSpecification, Naming};
-use log::{debug, error, info, trace, warn, Record};
+use futures_util::{FutureExt, StreamExt};
+use log::{debug, error, info, trace, Record};
+use once_cell::sync::Lazy;
+use tokio::select;
+
+use crate::cli::ARGS;
 
 mod cli;
 
@@ -29,11 +32,67 @@ fn formatter_file(write: &mut dyn Write, now: &mut DeferredNow, record: &Record)
     )
 }
 
+#[cfg(unix)]
+async fn watch_sigs(tx: tokio::sync::watch::Sender<bool>) {
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+    let mut sigquit = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
+    let sig = futures_util::future::select_all([
+        Box::pin(sigint.recv()),
+        Box::pin(sigterm.recv()),
+        Box::pin(sigquit.recv()),
+    ]).await;
+    match sig.1 {
+        0 => {info!("received SIGINT, terminating")},
+        1 => {info!("received SIGTERM, terminating")},
+        2 => {info!("received SIGQUIT, terminating")},
+        _ => unreachable!()
+    };
+    tx.send(true).unwrap();
+    trace!("sent cancellation signal");
+}
+
+#[cfg(windows)]
+async fn watch_sigs(tx: tokio::sync::watch::Sender<bool>) {
+    tokio::signal::windows::ctrl_c().unwrap().recv().await;
+    info!("received CTRL+C, terminating");
+    tx.send(true).unwrap();
+    trace!("sent cancellation signal");
+}
+
+async fn monitor_ip(addr: IpAddr, is_error: tokio::sync::mpsc::Sender<bool>) {
+    let payload: [u8; 256] = core::array::from_fn(|i| i as u8);
+    let mut errors: u32 = 0;
+
+    let mut interval = tokio::time::interval(Duration::from_secs(ARGS.interval));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        let ping = surge_ping::ping(addr, &payload).await;
+
+        if ping.is_err() {
+            errors += 1;
+        } else {
+            errors = 0;
+        }
+
+        if errors >= ARGS.hysteresis {
+            is_error.send(true).await.expect("receiver died");
+        } else {
+            is_error.send(false).await.expect("receiver died");
+        }
+
+        interval.tick().await;
+    }
+
+}
+
 #[tokio::main]
 async fn main() {
-    let args = tokio::task::spawn_blocking(|| { Args::parse() }).await.unwrap();
+    // gotta init this outside of the async runtime
+    tokio::task::spawn_blocking(|| Lazy::force(&ARGS)).await.unwrap();
 
-    let level = match args.verbosity {
+    let level = match ARGS.verbosity {
         0 => LogSpecification::info(),
         1 => LogSpecification::debug(),
         _ => LogSpecification::trace()
@@ -46,7 +105,7 @@ async fn main() {
         .format_for_stderr(formatter_stderr)
         .format_for_files(formatter_file);
 
-    if let Some(dir) = &args.out_dir {
+    if let Some(dir) = &ARGS.out_dir {
         logger.log_to_file(
             FileSpec::default()
                 .directory(dir)
@@ -57,102 +116,47 @@ async fn main() {
 
     info!("logging started");
 
-    debug!("{:#?}", &args);
+    debug!("{:#?}", *ARGS);
 
-    info!("monitoring started, pinging {} and {} every {}s", args.hostname.0, args.hostname.1, args.interval);
+    info!("monitoring started, pinging {} and {} every {}s", ARGS.hostname.0, ARGS.hostname.1, ARGS.interval);
 
     let (tx, mut rx) = tokio::sync::watch::channel(false);
 
-    // watches for CTRL+C and sends a signal to main thread to gracefully
-    // shutdown
-    tokio::spawn({
-        async move {
-                tokio::signal::ctrl_c().await.unwrap();
-                trace!("received CTRL+C");
-                tx.send(true).unwrap();
-                trace!("sent cancellation signal");
-            }
-        }
-    );
+    // watches for termination signals and sends a signal to main thread to
+    // gracefully shutdown
+    tokio::spawn(watch_sigs(tx));
 
-    // errors in a row
-    let mut v4_errors: usize = 0;
-    let mut v6_errors: usize = 0;
-    // successes in a row
-    let mut v4_successes: usize = 0;
-    let mut v6_successes: usize = 0;
-    // if there was an error during the last iteration
+    let (v4_tx, mut v4_rx) = tokio::sync::mpsc::channel(16);
+    let v4_thread = tokio::spawn(monitor_ip(ARGS.hostname.0.into(), v4_tx));
+
+    let (v6_tx, mut v6_rx) = tokio::sync::mpsc::channel(16);
+    let v6_thread = tokio::spawn(monitor_ip(ARGS.hostname.1.into(), v6_tx));
+
+    let mut v4_down = false;
+    let mut v6_down = false;
+
     let mut v4_error_active = false;
     let mut v6_error_active = false;
 
     let mut v4_error_start: Option<Instant> = None;
     let mut v6_error_start: Option<Instant> = None;
 
-    let mut interval = tokio::time::interval(Duration::from_secs(args.interval as u64));
-
-    let v4_ip = IpAddr::V4(args.hostname.0);
-    let v6_ip = IpAddr::V6(args.hostname.1);
+    // if this stream ever yields anything then quit
+    let mut should_end = futures_util::future::select(
+        futures_util::future::select_all([v4_thread, v6_thread]),
+        Box::pin(rx.changed())
+    ).into_stream();
 
     // TODO: make this not as stupid
     loop {
-        let payload: [u8; 256] = core::array::from_fn(|i| i as u8);
-
-        let ipv4_ping = surge_ping::ping(v4_ip, &payload);
-        let ipv6_ping = surge_ping::ping(v6_ip, &payload);
-
-        let (v4_res, v6_res) = tokio::join!(
-            ipv4_ping,
-            ipv6_ping
-        );
-
-        match v4_res {
-            Ok(o) => {
-                trace!("{:?}", o.0);
-                v4_errors = 0;
-                if v4_successes % 10 == 0 {
-                    debug!("{} responded in {}ms", v4_ip, o.1.as_millis());
-                }
-                v4_successes += 1;
+        select! {
+            v4 = v4_rx.recv() => {
+                v4_down = v4.unwrap();
             },
-            Err(e) => {
-                debug!("v4 failed: {e:?}");
-                v4_successes = 0;
-                v4_errors += 1;
-                if !v4_error_active {
-                    warn!("IPv4 ping failed {v4_errors} times, reason: {e}");
-                }
+            v6 = v6_rx.recv() => {
+                v6_down = v6.unwrap();
             },
-        }
-
-        match v6_res {
-            Ok(o) => {
-                trace!("{:?}", o.0);
-                v6_errors = 0;
-                if v6_successes % 10 == 0 {
-                    debug!("{} responded in {}ms", v6_ip, o.1.as_millis());
-                }
-                v6_successes += 1;
-            },
-            Err(e) => {
-                debug!("v6 failed: {e:?}");
-                v6_successes = 0;
-                v6_errors += 1;
-                if !v6_error_active {
-                    warn!("IPv6 ping failed {v6_errors} times, reason: {e}");
-                }
-            },
-        }
-
-        // small hysteresis to account for random missed pings
-        let v4_down = v4_errors >= args.hysteresis as usize;
-        let v6_down = v6_errors >= args.hysteresis as usize;
-
-        if v4_errors == 1 {
-            v4_error_start = Some(Instant::now());
-        }
-
-        if v6_errors == 1 {
-            v6_error_start = Some(Instant::now());
+            _ = should_end.next() => { break }
         }
 
         // this is an abomination
@@ -198,7 +202,7 @@ async fn main() {
                         );
                         v4_error_start = None;
                     } else {
-                        info!("IPv4 is back online;")
+                        info!("IPv4 is back online")
                     }
                 }
                 (v4_error_active, v6_error_active) = (false, true);
@@ -215,7 +219,7 @@ async fn main() {
                         );
                         v4_error_start = None;
                     } else {
-                        info!("network is back online;")
+                        info!("network is back online")
                     }
                 } else if v4_error_active {
                     if let Some(start) = v4_error_start {
@@ -228,7 +232,7 @@ async fn main() {
                         );
                         v4_error_start = None;
                     } else {
-                        info!("IPv4 is back online;")
+                        info!("IPv4 is back online")
                     }
                 } else if v6_error_active {
                     if let Some(start) = v6_error_start {
@@ -241,17 +245,12 @@ async fn main() {
                         );
                         v6_error_start = None;
                     } else {
-                        info!("IPv6 is back online;")
+                        info!("IPv6 is back online")
                     }
                 }
                 (v4_error_active, v6_error_active) = (false, false);
             },
         };
-
-        tokio::select! {
-            _ = rx.changed() => { break }
-            _ = interval.tick() => (),
-        }
     }
     info!("logging stopped");
 }

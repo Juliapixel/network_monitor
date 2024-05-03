@@ -1,6 +1,6 @@
 [package]
 name = "network_monitor"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Juliapixel"]
 license = "MIT"
@@ -9,8 +9,10 @@ license = "MIT"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive", "env"] }
-flexi_logger = { version = "0.27", features = ["compress"] }
+flexi_logger = { version = "0.28", features = ["compress"] }
+futures-util = "0.3.30"
 log = "0.4"
+once_cell = "1.19"
 surge-ping = "0.8"
 tokio = { version = "1.35", features = ["full"] }
 trust-dns-resolver = { version = "0.23", features = ["rustls", "dns-over-https-rustls"] }
