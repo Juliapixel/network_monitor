@@ -2,7 +2,7 @@ use std::{io::Write, net::IpAddr, time::{Duration, Instant}};
 
 use flexi_logger::{style, Cleanup, Criterion, DeferredNow, FileSpec, LogSpecification, Naming};
 use futures_util::{FutureExt, StreamExt};
-use log::{debug, error, info, trace, Record};
+use log::{debug, error, info, trace, warn, Record};
 use once_cell::sync::Lazy;
 use tokio::select;
 
@@ -34,9 +34,11 @@ fn formatter_file(write: &mut dyn Write, now: &mut DeferredNow, record: &Record)
 
 #[cfg(unix)]
 async fn watch_sigs(tx: tokio::sync::watch::Sender<bool>) {
-    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-    let mut sigquit = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
+    use tokio::signal::unix::SignalKind;
+
+    let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt()).unwrap();
+    let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
+    let mut sigquit = tokio::signal::unix::signal(SignalKind::quit()).unwrap();
     let sig = futures_util::future::select_all([
         Box::pin(sigint.recv()),
         Box::pin(sigterm.recv()),
@@ -70,10 +72,17 @@ async fn monitor_ip(addr: IpAddr, is_error: tokio::sync::mpsc::Sender<bool>) {
     loop {
         let ping = surge_ping::ping(addr, &payload).await;
 
-        if ping.is_err() {
-            errors += 1;
-        } else {
-            errors = 0;
+        match ping {
+            Ok(ping) => {
+                errors = 0;
+                debug!("ping to {addr} successful");
+                trace!("{ping:?}");
+            },
+            Err(e) => {
+                errors += 1;
+                warn!("ping to {addr} failed {errors} times");
+                debug!("{e:?}");
+            },
         }
 
         if errors >= ARGS.hysteresis {
