@@ -1,6 +1,6 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, path::PathBuf, str::FromStr};
 
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use once_cell::sync::Lazy;
 use trust_dns_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
 
@@ -102,7 +102,15 @@ fn parse_address(val: &str) -> Result<(Ipv4Addr, Ipv6Addr), &'static str> {
     }
 }
 
-#[test]
-fn verify_cli() {
-    Args::command().debug_assert()
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Args;
+
+
+    #[test]
+    fn verify_cli() {
+        Args::command().debug_assert()
+    }
 }
