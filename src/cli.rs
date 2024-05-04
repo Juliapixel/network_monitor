@@ -39,7 +39,7 @@ fn parse_log_file_dir(val: &str) -> Result<PathBuf, &'static str> {
         return Err("Given path does not exist");
     }
     if !path.is_dir() {
-        return Err("Giver path is not a directory");
+        return Err("Given path is not a directory");
     }
     match path.canonicalize() {
         Ok(o) => Ok(o),
